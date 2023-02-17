@@ -1,0 +1,211 @@
+---
+title: 'Lab6: Clustering'
+author: "Nick McManus"
+date: "2023-02-16"
+output: 
+  html_document:
+    code_folding: show
+---
+
+```{r setup, echo = TRUE, message=FALSE, warning = FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F)
+library(tidyverse)
+library(janitor)
+library(palmerpenguins)
+
+## packages for cluster analysis
+library(NbClust)
+library(cluster)
+library(factoextra)
+library(dendextend)
+library(ggdendro)
+```
+
+
+
+# Intro to cluster analysis - k-means, hierarchical
+
+## Part 1: K-means clustering
+
+```{r}
+ggplot(penguins) +
+  geom_point(aes(x=bill_length_mm, y=bill_depth_mm, color = species, shape = sex),
+             size = 3, alpha = 0.7) +
+  scale_color_manual(values = c('orange','cyan4','darkmagenta')) +
+  theme_minimal()
+
+
+ggplot(penguins) +
+  geom_point(aes(x = flipper_length_mm,
+                 y = body_mass_g,
+                 color = species,
+                 shape = sex),
+             size = 3, alpha = 0.7) +
+  scale_color_manual(values = c('orange','cyan4','darkmagenta')) +
+  theme_light()
+```
+
+
+### Create a complete, scaled version of the data
+
+```{r}
+penguins_complete <- penguins %>% 
+  drop_na(bill_length_mm, bill_depth_mm, body_mass_g, flipper_length_mm)
+
+penguins_scale <- penguins_complete %>% 
+  select(ends_with('_mm'), body_mass_g) %>% 
+  scale()
+```
+
+
+### Estimate number of clusters
+
+```{r}
+number_est <- NbClust(penguins_scale, min.nc = 2, max.nc = 10, method = 'kmeans')
+
+fviz_nbclust(penguins_scale, FUNcluster = kmeans, method = 'wss', k.max = 10)
+```
+
+
+
+### run some k-means
+
+```{r}
+set.seed(123)
+penguins_km <- kmeans(penguins_scale,
+                      centers = 3,
+                      iter.max = 10,  #default value
+                      nstart = 25)
+
+#penguins_km$size
+#penguins_km$cluster
+penguins_cl <- penguins_complete %>% 
+  mutate(cluster_no = factor(penguins_km$cluster))
+```
+
+
+```{r}
+ggplot(penguins_cl) +
+  geom_point(aes(x = flipper_length_mm,
+                 y = body_mass_g,
+                 color = cluster_no,
+                 shape = species))
+
+ggplot(penguins_cl) +
+  geom_point(aes(x = bill_length_mm,
+                 y = bill_depth_mm,
+                 color = cluster_no,
+                 shape = species)) +
+  scale_color_viridis_d()  #d for discrete
+
+
+penguins_cl %>% 
+  select(species, cluster_no) %>% 
+  table()
+```
+
+
+## Hierarchical clustering
+
+### Start with complete linkage
+
+```{r}
+# create distance matrix
+peng_dist <- dist(penguins_scale, method = 'euclidean')
+
+# hierarchical clustering (complete linkage)
+peng_hc_complete <- hclust(peng_dist, method = 'complete')
+##other methods: single, average, ward.D
+
+# plot a dendrogram
+plot(peng_hc_complete, cex = .6, hang = -1)
+
+# cut tree into three clusters
+peng_cut_hc <- cutree(peng_hc_complete, 3)
+table(peng_cut_hc, penguins_complete$species)
+```
+
+
+
+## World Bank data: read in and simplify
+
+```{r}
+wb_env <- read_csv(here::here('data/wb_env.csv'))
+
+wb_ghg_20 <- wb_env %>% 
+  slice_max(ghg, n = 20)
+
+summary(wb_ghg_20)
+
+wb_scaled <- wb_ghg_20 %>% 
+  select(3:7) %>%  #could also do variable names
+  scale()
+
+summary(wb_scaled)
+
+# turned to matrix so lost rownames, can add from og dataset
+rownames(wb_scaled) <- wb_ghg_20$name
+```
+
+
+### Find Euclidean distances 
+
+```{r}
+euc_distance <- dist(wb_scaled, method = 'euclidean')
+```
+
+### Perform hierarchical clustering w/complete linkage
+
+```{r}
+hc_complete <- hclust(euc_distance, method = 'complete')
+plot(hc_complete, cex = 0.6, hang = -1)
+```
+
+
+### Perform hierachical clustering by single linkage
+
+```{r}
+hc_single <- hclust(euc_distance, method= 'single')
+plot(hc_single, cex = 0.9, hang = -1)
+```
+
+
+### Make a tanglegram
+
+Compare two dendrograms at once
+```{r}
+dend_complete <- as.dendrogram(hc_complete)
+dend_single <- as.dendrogram(hc_single)
+
+tanglegram(dend_complete, dend_single)
+
+entanglement(dend_complete, dend_single)
+
+untangle(dend_complete, dend_single, method = 'step1side') %>% 
+  entanglement()
+
+untangle(dend_complete, dend_single, method = 'step1side') %>% 
+  tanglegram(common_subtrees_color_branches = TRUE)
+```
+
+
+### Dendrogram in ggplot
+```{r}
+ggdendrogram(hc_complete, rotate = TRUE)+
+  theme_minimal() +
+  labs(x = 'Country')
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
